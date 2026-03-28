@@ -3,35 +3,25 @@ WB AI-Agent MVP — Entry point.
 
 Startup sequence:
 1. setup_logging()
-2. Settings validation (Pydantic — fail fast on missing env vars)
-3. init_db() — SQLite WAL + schema
-4. start_health_server() — aiohttp on $PORT (required by Railway)
+2. start_health_server() — aiohttp on $PORT — FIRST, so Railway healthcheck passes
+3. Settings validation (Pydantic — fail fast on missing env vars)
+4. init_db() — SQLite WAL + schema
 5. validate_startup() — probe Sheets + Gemini APIs
 6. Build PTB Application with post_shutdown cleanup
 7. Register handlers
 8. Schedule jobs via PTB JobQueue (NO external AsyncIOScheduler)
 9. run_polling()
+
+IMPORTANT: src.* imports are deferred to inside async_main() so the health server
+always starts even if Settings() raises ValidationError (missing env vars).
 """
 from __future__ import annotations
 
 import asyncio
-import datetime
 import logging
 import os
-import time
 
-import pytz
 from aiohttp import web
-from telegram.ext import Application
-
-from src.bot.handlers import register_handlers
-from src.gemini.client import GeminiClient
-from src.logging_config import setup_logging
-from src.processing.anomaly import AnomalyChecker
-from src.processing.context import ContextBuilder
-from src.settings import settings
-from src.sheets.reader import SheetsReader, _sheets_executor
-from src.storage import cache
 
 logger = logging.getLogger(__name__)
 
@@ -181,21 +171,37 @@ async def notify_owner(app: Application, message: str) -> None:
 # ── Main ────────────────────────────────────────────────────────────────────────
 
 async def async_main() -> None:
-    # 1. Initialize DB
+    # 1. Health server FIRST — Railway polls /health before anything else.
+    #    Must bind before any src.* import so it survives Settings() ValidationError.
+    asyncio.create_task(start_health_server())
+    await asyncio.sleep(0.3)   # allow TCPSite to bind the socket
+
+    # 2. Deferred imports — Settings() may raise ValidationError if env vars missing.
+    #    Happens AFTER health server is up, so Railway sees a live /health endpoint.
+    import datetime
+    import pytz
+    from telegram.ext import Application
+    from src.bot.handlers import register_handlers
+    from src.gemini.client import GeminiClient
+    from src.logging_config import setup_logging  # noqa: F401 (already called in __main__)
+    from src.processing.anomaly import AnomalyChecker
+    from src.processing.context import ContextBuilder
+    from src.settings import settings
+    from src.sheets.reader import SheetsReader, _sheets_executor
+    from src.storage import cache
+
+    _UTC = pytz.utc
+
+    # 3. Initialize DB
     await cache.init_db()
 
-    # 2. Initialize core services
+    # 4. Initialize core services
     reader = SheetsReader(settings.google_credentials, settings.spreadsheet_id)
     gemini = GeminiClient(settings.gemini_api_key, settings.gemini_model)
     checker = AnomalyChecker()
     ctx_builder = ContextBuilder(checker)
 
-    # 3. Start health server (Railway requires an HTTP endpoint on $PORT)
-    asyncio.create_task(start_health_server())
-    # Give it a moment to bind
-    await asyncio.sleep(0.5)
-
-    # 4. Validate API connectivity
+    # 5. Validate API connectivity
     await validate_startup(reader, gemini)
 
     # 5. Initial cache load (best-effort)
@@ -290,6 +296,6 @@ async def async_main() -> None:
 
 
 if __name__ == "__main__":
+    from src.logging_config import setup_logging
     setup_logging()
-    # settings is imported at module level — raises pydantic ValidationError if required env vars missing
     asyncio.run(async_main())
