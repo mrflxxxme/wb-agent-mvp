@@ -11,21 +11,26 @@ import aiosqlite
 
 @pytest.fixture
 def tmp_db_path(tmp_path):
-    return str(tmp_path / "test_cache.db")
+    # Must match settings.db_path = f"{data_dir}/cache.db"
+    # so when we set data_dir=tmp_path, db_path == tmp_path/cache.db == tmp_db_path
+    return str(tmp_path / "cache.db")
 
 
 @pytest.fixture(autouse=True)
 def override_settings(tmp_db_path, monkeypatch):
     """Override settings to use temp DB path."""
+    import os
+    # tmp_db_path = "{tmp_path}/cache.db", so data_dir = tmp_path (the directory)
+    tmp_dir = os.path.dirname(tmp_db_path)
+
     from src import settings as settings_module
-    monkeypatch.setattr(settings_module.settings, "data_dir", str(tmp_path := tmp_db_path.rsplit("/", 1)[0]))
-    monkeypatch.setattr(settings_module.settings, "db_path", tmp_db_path)
-    # Also patch the module-level DB_PATH in cache
+    # db_path is a @property computed as f"{data_dir}/cache.db"
+    # Setting data_dir=tmp_dir makes db_path == tmp_db_path automatically
+    monkeypatch.setattr(settings_module.settings, "data_dir", tmp_dir)
+
     import src.storage.cache as cache_mod
-    monkeypatch.setattr(cache_mod, "DB_PATH", tmp_db_path, raising=False)
-    # Patch settings inside cache module
-    monkeypatch.setattr(cache_mod.settings, "db_path", tmp_db_path)
-    monkeypatch.setattr(cache_mod.settings, "data_dir", str(tmp_db_path.rsplit("/", 1)[0]))
+    # Patch settings on the cache module reference too (same singleton)
+    monkeypatch.setattr(cache_mod.settings, "data_dir", tmp_dir)
     monkeypatch.setattr(cache_mod.settings, "cache_ttl_minutes", 5)
 
 
