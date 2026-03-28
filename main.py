@@ -25,9 +25,6 @@ from aiohttp import web
 
 logger = logging.getLogger(__name__)
 
-_MSK = pytz.timezone("Europe/Moscow")
-_UTC = pytz.utc
-
 
 # ── Health check server ────────────────────────────────────────────────────────
 
