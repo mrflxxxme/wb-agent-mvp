@@ -12,7 +12,7 @@ P0_SHEETS: dict[str, str] = {
     "checklist_cross": "checklist_cross",
     "opu": "ОПиУ",
     "unit": "UNIT",
-    "plan_actual": "ПЛАН Апрель",   # confirmed by client; update monthly
+    "plan_actual": "plan_actual",    # technical tab (permanent name, no monthly rename needed)
     "rnp": "РНП",
     "config": "config",
 }
