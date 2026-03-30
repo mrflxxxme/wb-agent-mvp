@@ -13,6 +13,18 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
+# Compatibility patch: google-genai ≥1.7 references aiohttp.ClientConnectorDNSError
+# at call-time inside models.py, but this class is not re-exported from the
+# top-level aiohttp namespace in aiohttp 3.9/3.10. Patch it in before first use.
+import aiohttp as _aiohttp_mod
+if not hasattr(_aiohttp_mod, "ClientConnectorDNSError"):
+    try:
+        from aiohttp.client_exceptions import ClientConnectorDNSError as _cde
+        _aiohttp_mod.ClientConnectorDNSError = _cde
+    except ImportError:
+        _aiohttp_mod.ClientConnectorDNSError = _aiohttp_mod.ClientConnectorError
+del _aiohttp_mod
+
 from google import genai
 from google.genai import types
 from tenacity import (
