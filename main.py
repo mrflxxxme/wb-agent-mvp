@@ -45,13 +45,13 @@ async def start_health_server() -> None:
 
 # ── Startup validation ─────────────────────────────────────────────────────────
 
-async def validate_startup(reader: SheetsReader, gemini: GeminiClient) -> None:
+async def validate_startup(reader, gemini, executor) -> None:
     """Probe Sheets and Gemini APIs. Exit if Sheets is unreachable."""
     loop = asyncio.get_running_loop()
 
     # Sheets probe (critical — bot is useless without data)
     try:
-        title = await loop.run_in_executor(_sheets_executor, reader.probe)
+        title = await loop.run_in_executor(executor, reader.probe)
         logger.info("Sheets API: OK — spreadsheet '%s'", title)
     except Exception as e:
         logger.critical("Cannot connect to Google Sheets: %s", e)
@@ -66,12 +66,12 @@ async def validate_startup(reader: SheetsReader, gemini: GeminiClient) -> None:
 
 # ── Scheduled jobs ─────────────────────────────────────────────────────────────
 
-def make_cache_refresh_job(reader: SheetsReader):
+def make_cache_refresh_job(reader, executor):
     async def cache_refresh_job(context) -> None:
         logger.debug("Scheduled: cache_refresh started")
         loop = asyncio.get_running_loop()
         try:
-            new_data = await loop.run_in_executor(_sheets_executor, reader.read_all)
+            new_data = await loop.run_in_executor(executor, reader.read_all)
             await cache.set_all_sheets(new_data)
             logger.info("Cache refreshed: %d sheets", len(new_data))
         except Exception as e:
@@ -79,7 +79,7 @@ def make_cache_refresh_job(reader: SheetsReader):
     return cache_refresh_job
 
 
-def make_alert_check_job(checker: AnomalyChecker, app: Application):
+def make_alert_check_job(checker, owner_chat_id: int):
     async def alert_check_job(context) -> None:
         logger.debug("Scheduled: alert_check started")
         try:
@@ -102,7 +102,7 @@ def make_alert_check_job(checker: AnomalyChecker, app: Application):
                         f"💡 {anomaly.action}"
                     )
                     await context.bot.send_message(
-                        chat_id=settings.owner_chat_id,
+                        chat_id=owner_chat_id,
                         text=text,
                         parse_mode="Markdown",
                     )
@@ -113,29 +113,29 @@ def make_alert_check_job(checker: AnomalyChecker, app: Application):
     return alert_check_job
 
 
-def make_daily_summary_job(ctx_builder: ContextBuilder, gemini: GeminiClient, app: Application):
+def make_daily_summary_job(ctx_builder, gemini, owner_chat_id: int):
     async def daily_summary_job(context) -> None:
         logger.info("Scheduled: daily_summary started")
         try:
             ctx = await ctx_builder.build("daily")
             text = await gemini.ask(ctx, "daily")
-            for part in text.split("\n\n\n"):   # crude split for long messages
+            for part in text.split("\n\n\n"):
                 if part.strip():
                     await context.bot.send_message(
-                        chat_id=settings.owner_chat_id,
+                        chat_id=owner_chat_id,
                         text=part,
                         parse_mode="Markdown",
                     )
         except Exception as e:
             logger.error("Daily summary failed: %s", e, exc_info=True)
             await context.bot.send_message(
-                chat_id=settings.owner_chat_id,
+                chat_id=owner_chat_id,
                 text=f"❌ Ошибка при формировании дневного отчёта: {e}",
             )
     return daily_summary_job
 
 
-def make_weekly_analysis_job(ctx_builder: ContextBuilder, gemini: GeminiClient, app: Application):
+def make_weekly_analysis_job(ctx_builder, gemini, owner_chat_id: int):
     async def weekly_analysis_job(context) -> None:
         logger.info("Scheduled: weekly_analysis started")
         try:
@@ -144,23 +144,23 @@ def make_weekly_analysis_job(ctx_builder: ContextBuilder, gemini: GeminiClient, 
             for part in text.split("\n\n\n"):
                 if part.strip():
                     await context.bot.send_message(
-                        chat_id=settings.owner_chat_id,
+                        chat_id=owner_chat_id,
                         text=part,
                         parse_mode="Markdown",
                     )
         except Exception as e:
             logger.error("Weekly analysis failed: %s", e, exc_info=True)
             await context.bot.send_message(
-                chat_id=settings.owner_chat_id,
+                chat_id=owner_chat_id,
                 text=f"❌ Ошибка при формировании недельного анализа: {e}",
             )
     return weekly_analysis_job
 
 
-async def notify_owner(app: Application, message: str) -> None:
+async def notify_owner(app, owner_chat_id: int, message: str) -> None:
     """Send a system notification to the owner chat."""
     try:
-        await app.bot.send_message(chat_id=settings.owner_chat_id, text=message)
+        await app.bot.send_message(chat_id=owner_chat_id, text=message)
     except Exception as e:
         logger.error("Failed to notify owner: %s", e)
 
@@ -199,7 +199,7 @@ async def async_main() -> None:
     ctx_builder = ContextBuilder(checker)
 
     # 5. Validate API connectivity
-    await validate_startup(reader, gemini)
+    await validate_startup(reader, gemini, _sheets_executor)
 
     # 5. Initial cache load (best-effort)
     logger.info("Initial Sheets data load...")
@@ -231,16 +231,16 @@ async def async_main() -> None:
     jq = app.job_queue
 
     jq.run_repeating(
-        make_cache_refresh_job(reader),
+        make_cache_refresh_job(reader, _sheets_executor),
         interval=settings.cache_ttl_minutes * 60,
         name="cache_refresh",
         job_kwargs={"misfire_grace_time": 60},
     )
     jq.run_repeating(
-        make_alert_check_job(checker, app),
-        interval=600,   # Every 10 minutes
+        make_alert_check_job(checker, settings.owner_chat_id),
+        interval=600,
         name="alert_check",
-        first=60,       # First run after 1 minute (allow initial cache to load)
+        first=60,
         job_kwargs={"misfire_grace_time": 120},
     )
 
@@ -248,9 +248,9 @@ async def async_main() -> None:
         settings.daily_report_hour_utc, 0, tzinfo=_UTC
     )
     jq.run_daily(
-        make_daily_summary_job(ctx_builder, gemini, app),
+        make_daily_summary_job(ctx_builder, gemini, settings.owner_chat_id),
         time=msk_daily_time,
-        days=tuple(range(0, 5)),    # Mon–Fri
+        days=tuple(range(0, 5)),
         name="daily_summary",
         job_kwargs={"misfire_grace_time": 300},
     )
@@ -259,7 +259,7 @@ async def async_main() -> None:
         settings.weekly_report_hour_utc, 30, tzinfo=_UTC
     )
     jq.run_daily(
-        make_weekly_analysis_job(ctx_builder, gemini, app),
+        make_weekly_analysis_job(ctx_builder, gemini, settings.owner_chat_id),
         time=msk_weekly_time,
         days=(settings.weekly_report_weekday,),
         name="weekly_analysis",
@@ -277,7 +277,7 @@ async def async_main() -> None:
             exc_info=getattr(event, "traceback", None),
         )
         asyncio.run_coroutine_threadsafe(
-            notify_owner(app, f"❌ Job `{event.job_id}` failed: {event.exception}"),
+            notify_owner(app, settings.owner_chat_id, f"❌ Job `{event.job_id}` failed: {event.exception}"),
             asyncio.get_event_loop(),
         )
 
