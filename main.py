@@ -66,7 +66,7 @@ async def validate_startup(reader, gemini, executor) -> None:
 
 # ── Scheduled jobs ─────────────────────────────────────────────────────────────
 
-def make_cache_refresh_job(reader, executor):
+def make_cache_refresh_job(reader, executor, cache):
     async def cache_refresh_job(context) -> None:
         logger.debug("Scheduled: cache_refresh started")
         loop = asyncio.get_running_loop()
@@ -79,7 +79,7 @@ def make_cache_refresh_job(reader, executor):
     return cache_refresh_job
 
 
-def make_alert_check_job(checker, owner_chat_id: int):
+def make_alert_check_job(checker, owner_chat_id: int, cache):
     async def alert_check_job(context) -> None:
         logger.debug("Scheduled: alert_check started")
         try:
@@ -231,13 +231,13 @@ async def async_main() -> None:
     jq = app.job_queue
 
     jq.run_repeating(
-        make_cache_refresh_job(reader, _sheets_executor),
+        make_cache_refresh_job(reader, _sheets_executor, cache),
         interval=settings.cache_ttl_minutes * 60,
         name="cache_refresh",
         job_kwargs={"misfire_grace_time": 60},
     )
     jq.run_repeating(
-        make_alert_check_job(checker, settings.owner_chat_id),
+        make_alert_check_job(checker, settings.owner_chat_id, cache),
         interval=600,
         name="alert_check",
         first=60,
