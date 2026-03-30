@@ -58,7 +58,7 @@ class SheetsReader:
         except gspread.exceptions.WorksheetNotFound:
             logger.warning("Sheet tab '%s' not found — skipping", tab_name)
             return []
-        records = ws.get_all_records()
+        records = ws.get_all_records(expected_headers=[])
         logger.debug("Read %d rows from '%s'", len(records), tab_name)
         return records
 

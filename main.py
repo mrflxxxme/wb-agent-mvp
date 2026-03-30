@@ -289,7 +289,27 @@ async def async_main() -> None:
     logger.info("Starting bot polling...")
 
     # 10. Run (blocks until SIGTERM/SIGINT)
-    await app.run_polling(drop_pending_updates=True)
+    # PTB v21: run_polling() calls asyncio.run() internally — cannot use inside
+    # an already-running event loop. Use async context manager + manual signal handling.
+    import signal as _signal
+
+    async with app:
+        await app.updater.start_polling(drop_pending_updates=True)
+        await app.start()
+        _stop_event = asyncio.Event()
+        _loop = asyncio.get_running_loop()
+        for _sig in (_signal.SIGTERM, _signal.SIGINT):
+            try:
+                _loop.add_signal_handler(_sig, _stop_event.set)
+            except NotImplementedError:
+                pass  # Windows: no add_signal_handler, SIGINT handled by KeyboardInterrupt
+        try:
+            await _stop_event.wait()
+        except (KeyboardInterrupt, SystemExit):
+            pass
+        finally:
+            await app.updater.stop()
+            await app.stop()
 
 
 if __name__ == "__main__":
