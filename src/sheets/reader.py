@@ -21,7 +21,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from src.sheets.mapping import P0_SHEETS, P1_SHEETS
+from src.sheets.mapping import P0_SHEETS, P1_SHEETS, P2_SHEETS
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +93,20 @@ class SheetsReader:
                 result[key] = []
         return result
 
+    def read_p2(self) -> Dict[str, List[dict]]:
+        """Read P2 sheets (best-effort, missing or errored sheets return empty list)."""
+        result: Dict[str, List[dict]] = {}
+        for key, tab_name in P2_SHEETS.items():
+            try:
+                result[key] = self._read_sheet_sync(tab_name)
+            except Exception as e:
+                logger.warning("P2 sheet '%s' unavailable: %s", tab_name, e)
+                result[key] = []
+        return result
+
     def read_all(self) -> Dict[str, List[dict]]:
-        """Read P0 + P1 sheets."""
+        """Read P0 + P1 + P2 sheets."""
         data = self.read_all_p0()
         data.update(self.read_p1())
+        data.update(self.read_p2())
         return data

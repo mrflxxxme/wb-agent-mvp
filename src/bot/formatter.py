@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import List
 
-MAX_MESSAGE_LENGTH = 2000
+MAX_MESSAGE_LENGTH = 2500
 
 
 # Characters that must be escaped in MarkdownV2

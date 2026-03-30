@@ -22,14 +22,18 @@ P1_SHEETS: dict[str, str] = {
     "cards": "cards",
     "razdachi": "Раздачи",
     "hypotheses": "Гипотезы",
+    "promotions": "Акции",                  # WB акции — нужны для вопросов о ценах и марже
+    "fin_sku": "Фин отчет по SKU",          # Детализированный финансовый отчёт по SKU
 }
 
 # P2 — desirable (trimmed first if context limit approached)
 P2_SHEETS: dict[str, str] = {
-    "jam": "Джем",
+    "jam": "Джем",                          # Рекламные кластеры, CTR, CPC, потенциал прибыли
     "mp_conv": "mp_conv",
-    "external_costs": "Внешние расходы",
-    "seo": "SEO",
+    "external_costs": "Внешние расходы",   # Блогеры, посевы, внешние бюджеты
+    "seo": "SEO",                           # Кластеры, позиции, охват запросов
+    "plan_season": "План сезона",           # Сезонные цели, поставки, новинки
+    "nm_ref": "Справочный лист nmID",       # Справочник SKU с nmID и отслеживаемыми запросами
 }
 
 ALL_SHEETS: dict[str, str] = {**P0_SHEETS, **P1_SHEETS, **P2_SHEETS}

@@ -162,13 +162,25 @@ class ContextBuilder:
             ctx["rnp_data"] = rnp[:20]
             ctx["config"] = config_sheet[:5]
             # P1 data (if available in cache)
-            all_data = all_sheets
-            if "cards" in all_data:
-                ctx["cards"] = all_data["cards"][:50]
-            if "hypotheses" in all_data:
-                ctx["hypotheses"] = all_data["hypotheses"][:20]
-            if "razdachi" in all_data:
-                ctx["razdachi_recent"] = all_data["razdachi"][-10:]
+            if all_sheets.get("cards"):
+                ctx["cards"] = all_sheets["cards"][:50]
+            if all_sheets.get("hypotheses"):
+                ctx["hypotheses"] = all_sheets["hypotheses"][:20]
+            if all_sheets.get("razdachi"):
+                ctx["razdachi_recent"] = all_sheets["razdachi"][-10:]
+            if all_sheets.get("promotions"):
+                ctx["promotions"] = all_sheets["promotions"][:30]
+            if all_sheets.get("fin_sku"):
+                ctx["fin_report_sku"] = all_sheets["fin_sku"][:30]
+            # P2 data (trimmed first if context too large)
+            if all_sheets.get("jam"):
+                ctx["jam_clusters"] = all_sheets["jam"][:30]
+            if all_sheets.get("external_costs"):
+                ctx["external_costs"] = all_sheets["external_costs"][-10:]
+            if all_sheets.get("seo"):
+                ctx["seo_clusters"] = all_sheets["seo"][:20]
+            if all_sheets.get("plan_season"):
+                ctx["plan_season"] = all_sheets["plan_season"][:20]
 
         # ── Auto-trim if too large ─────────────────────────────────────────
         ctx = self._trim_context(ctx)
@@ -183,9 +195,9 @@ class ContextBuilder:
         """Remove optional fields until context fits within token budget."""
         trim_candidates = [
             # P2-level: remove first
-            "seo", "jam", "external_costs_data",
+            "plan_season", "seo_clusters", "jam_clusters", "external_costs",
             # P1-level: remove if still too large
-            "hypotheses", "razdachi_recent", "cards",
+            "fin_report_sku", "promotions", "hypotheses", "razdachi_recent", "cards",
             # Trim long lists
             "checklist_recent", "opu_recent", "checklist_cross",
         ]
