@@ -146,11 +146,31 @@ class ContextBuilder:
             ctx["sku_stock_data"] = stock_rows[-50:]
 
         elif query_type == "ads":
+            # Обязательные источники для рекламного анализа
             ctx["ads_data"] = [
                 r for r in checklist
                 if r.get("adv_sum") not in (None, "", "-", 0)
-            ][-30:]
+            ][-50:]
             ctx["unit_economics"] = unit[:20] if unit else []
+            ctx["rnp_data"] = rnp[:20] if rnp else []
+            if all_sheets.get("jam"):
+                ctx["jam_clusters"] = all_sheets["jam"][:30]
+            if all_sheets.get("external_costs"):
+                ctx["external_costs"] = all_sheets["external_costs"][-10:]
+            # Опциональные источники
+            if all_sheets.get("nm_ref"):
+                ctx["nm_ref"] = all_sheets["nm_ref"][:20]
+            if all_sheets.get("mp_conv"):
+                ctx["mp_conv"] = all_sheets["mp_conv"][:20]
+            # Вычисляемые рекламные метрики из PeriodKPI
+            _adv = current_kpi.adv_sum
+            _ext = current_kpi.external_costs or 0.0
+            _orders_sum = current_kpi.orders_sum_rub
+            _orders_count = current_kpi.orders_count
+            if _adv is not None and _orders_sum:
+                ctx["real_drr_percent"] = round((_adv + _ext) / _orders_sum * 100, 2)
+            if _adv is not None and _orders_count:
+                ctx["cpo_rub"] = round((_adv + _ext) / _orders_count, 2)
 
         elif query_type == "ask":
             # Maximum context: all P0 data
@@ -194,12 +214,18 @@ class ContextBuilder:
     def _trim_context(self, ctx: Dict[str, Any]) -> Dict[str, Any]:
         """Remove optional fields until context fits within token budget."""
         trim_candidates = [
-            # P2-level: remove first
-            "plan_season", "seo_clusters", "jam_clusters", "external_costs",
-            # P1-level: remove if still too large
+            # P2-level: remove first (наименее критичные)
+            "plan_season", "seo_clusters",
+            # Рекламные P2 — удалять после seo/plan_season, но до P1
+            "mp_conv", "nm_ref", "external_costs",
+            # P1-level
             "fin_report_sku", "promotions", "hypotheses", "razdachi_recent", "cards",
-            # Trim long lists
+            # jam_clusters — самый ценный источник для /ads, удалять последним среди P2
+            "jam_clusters",
+            # Trim long lists (P0)
             "checklist_recent", "opu_recent", "checklist_cross",
+            # /ads derived
+            "rnp_data",
         ]
         for key in trim_candidates:
             if _estimate_tokens(ctx) <= MAX_TOKENS:
