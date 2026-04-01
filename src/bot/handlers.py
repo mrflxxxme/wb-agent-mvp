@@ -82,7 +82,10 @@ async def _send_ai_response(
         text = "❌ Произошла внутренняя ошибка. Попробуйте позже."
 
     for part in split_message(text):
-        await update.effective_message.reply_text(part, parse_mode="Markdown")
+        try:
+            await update.effective_message.reply_text(part, parse_mode="Markdown")
+        except Exception:
+            await update.effective_message.reply_text(part)
 
 
 # ── Command handlers ──────────────────────────────────────────────────────────
